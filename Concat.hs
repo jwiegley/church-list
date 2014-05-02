@@ -55,11 +55,16 @@ instance Monoid (Concat a) where
     xs `mappend` ys = Split xs ys
 
 -- | Case analyze a concat type's head and tail.
+uncons :: Concat a -> Maybe (a, Concat a)
+uncons (Whole [])     = Nothing
+uncons (Whole (x:xs)) = Just (x, Whole xs)
+uncons (Split xs ys)  = case uncons xs of
+    Nothing -> uncons ys
+    Just (z, zs) -> Just (z, zs <> ys)
+
+-- | Case analyze a concat type's head and tail.
 caseConcat :: b -> (a -> Concat a -> b) -> Concat a -> b
-caseConcat b f xs = case splitAt 1 xs of
-    (Whole [], _)   -> b
-    (Whole [x], ys) -> f x ys
-    _               -> error "Cannot happen"
+caseConcat b f xs = maybe b (uncurry f) (uncons xs)
 
 cons :: a -> Concat a -> Concat a
 cons x (Whole xs) = Whole (x:xs)
@@ -197,7 +202,10 @@ scanl1 :: (a -> a -> a) -> Concat a -> Concat a
 scanl1 f = caseConcat mempty (scanl f)
 
 scanr :: (a -> b -> b) -> b -> Concat a -> Concat b
-scanr = undefined
+scanr f q0 xs = case uncons xs of
+    Nothing -> Whole [q0]
+    Just (x, xs') -> f x q `cons` qs
+      where qs@(uncons -> Just (q, _)) = scanr f q0 xs'
 
 scanr1 :: (a -> a -> a) -> Concat a -> Concat a
 scanr1 = undefined
@@ -277,7 +285,10 @@ break :: (a -> Bool) -> Concat a -> (Concat a, Concat a)
 break = undefined
 
 stripPrefix :: Eq a => Concat a -> Concat a -> Maybe (Concat a)
-stripPrefix = undefined
+stripPrefix (Whole []) ys = Just ys
+stripPrefix (uncons -> Just (x, xs)) (uncons -> Just (y, ys))
+    | x == y = stripPrefix xs ys
+stripPrefix _ _ = Nothing
 
 group :: Eq a => Concat a -> Concat (Concat a)
 group = undefined
@@ -289,16 +300,20 @@ inits (Split xs ys) =
     in zs <> map (last zs <>) (tail (inits ys))
 
 tails :: Concat a -> Concat (Concat a)
-tails = undefined
+tails xs = xs `cons` caseConcat (Whole []) (const tails) xs
 
 isPrefixOf :: Eq a => Concat a -> Concat a -> Bool
-isPrefixOf = undefined
+isPrefixOf ws zs = caseConcat True go ws
+  where
+    go x xs = caseConcat False go' zs
+      where
+        go' y ys = x == y && isPrefixOf xs ys
 
 isSuffixOf :: Eq a => Concat a -> Concat a -> Bool
-isSuffixOf = undefined
+isSuffixOf x y =  reverse x `isPrefixOf` reverse y
 
 isInfixOf :: Eq a => Concat a -> Concat a -> Bool
-isInfixOf = undefined
+isInfixOf needle haystack = any (isPrefixOf needle) (tails haystack)
 
 elem :: Eq a => a -> Concat a -> Bool
 elem = F.elem
@@ -324,13 +339,13 @@ partition = undefined
 (!!) = undefined
 
 elemIndex :: Eq a => a -> Concat a -> Maybe Int
-elemIndex = undefined
+elemIndex x = findIndex (x ==)
 
 elemIndices :: Eq a => a -> Concat a -> Concat Int
-elemIndices = undefined
+elemIndices x = findIndices (x ==)
 
 findIndex :: (a -> Bool) -> Concat a -> Maybe Int
-findIndex = undefined
+findIndex p = listToMaybe . F.toList . findIndices p
 
 findIndices :: (a -> Bool) -> Concat a -> Concat Int
 findIndices = undefined
@@ -364,16 +379,16 @@ zip7 = zipWith7 (,,,,,,)
 
 zipWith :: (a -> b -> c) -> Concat a -> Concat b -> Concat c
 zipWith z
-    (splitAt 1 -> (Whole [a], as))
-    (splitAt 1 -> (Whole [b], bs))
+    (uncons -> Just (a, as))
+    (uncons -> Just (b, bs))
     = z a b `cons` zipWith z as bs
 zipWith _ _ _ = Whole []
 
 zipWith3 :: (a -> b -> c -> d) -> Concat a -> Concat b -> Concat c -> Concat d
 zipWith3 z
-    (splitAt 1 -> (Whole [a], as))
-    (splitAt 1 -> (Whole [b], bs))
-    (splitAt 1 -> (Whole [c], cs))
+    (uncons -> Just (a, as))
+    (uncons -> Just (b, bs))
+    (uncons -> Just (c, cs))
     = z a b c `cons` zipWith3 z as bs cs
 zipWith3 _ _ _ _ = Whole []
 
@@ -384,10 +399,10 @@ zipWith4 :: (a -> b -> c -> d -> e)
          -> Concat d
          -> Concat e
 zipWith4 z
-    (splitAt 1 -> (Whole [a], as))
-    (splitAt 1 -> (Whole [b], bs))
-    (splitAt 1 -> (Whole [c], cs))
-    (splitAt 1 -> (Whole [d], ds))
+    (uncons -> Just (a, as))
+    (uncons -> Just (b, bs))
+    (uncons -> Just (c, cs))
+    (uncons -> Just (d, ds))
     = z a b c d `cons` zipWith4 z as bs cs ds
 zipWith4 _ _ _ _ _ = Whole []
 
@@ -399,11 +414,11 @@ zipWith5 :: (a -> b -> c -> d -> e -> f)
          -> Concat e
          -> Concat f
 zipWith5 z
-    (splitAt 1 -> (Whole [a], as))
-    (splitAt 1 -> (Whole [b], bs))
-    (splitAt 1 -> (Whole [c], cs))
-    (splitAt 1 -> (Whole [d], ds))
-    (splitAt 1 -> (Whole [e], es))
+    (uncons -> Just (a, as))
+    (uncons -> Just (b, bs))
+    (uncons -> Just (c, cs))
+    (uncons -> Just (d, ds))
+    (uncons -> Just (e, es))
     = z a b c d e `cons` zipWith5 z as bs cs ds es
 zipWith5 _ _ _ _ _ _ = Whole []
 
@@ -416,12 +431,12 @@ zipWith6 :: (a -> b -> c -> d -> e -> f -> g)
          -> Concat f
          -> Concat g
 zipWith6 z
-    (splitAt 1 -> (Whole [a], as))
-    (splitAt 1 -> (Whole [b], bs))
-    (splitAt 1 -> (Whole [c], cs))
-    (splitAt 1 -> (Whole [d], ds))
-    (splitAt 1 -> (Whole [e], es))
-    (splitAt 1 -> (Whole [f], fs))
+    (uncons -> Just (a, as))
+    (uncons -> Just (b, bs))
+    (uncons -> Just (c, cs))
+    (uncons -> Just (d, ds))
+    (uncons -> Just (e, es))
+    (uncons -> Just (f, fs))
     = z a b c d e f `cons` zipWith6 z as bs cs ds es fs
 zipWith6 _ _ _ _ _ _ _ = Whole []
 
@@ -435,13 +450,13 @@ zipWith7 :: (a -> b -> c -> d -> e -> f -> g -> h)
          -> Concat g
          -> Concat h
 zipWith7 z
-    (splitAt 1 -> (Whole [a], as))
-    (splitAt 1 -> (Whole [b], bs))
-    (splitAt 1 -> (Whole [c], cs))
-    (splitAt 1 -> (Whole [d], ds))
-    (splitAt 1 -> (Whole [e], es))
-    (splitAt 1 -> (Whole [f], fs))
-    (splitAt 1 -> (Whole [g], gs))
+    (uncons -> Just (a, as))
+    (uncons -> Just (b, bs))
+    (uncons -> Just (c, cs))
+    (uncons -> Just (d, ds))
+    (uncons -> Just (e, es))
+    (uncons -> Just (f, fs))
+    (uncons -> Just (g, gs))
     = z a b c d e f g `cons` zipWith7 z as bs cs ds es fs gs
 zipWith7 _ _ _ _ _ _ _ _ = Whole []
 
