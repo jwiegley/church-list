@@ -3,6 +3,12 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE ViewPatterns #-}
 
+-- | This module provides a Tree-based lazy list representation which offers
+--   O(1) concatenation and `snoc`, similarly to difference lists, but also
+--   examine examination of the results.  Since many operations require
+--   walking the tree, they are computationally more expensive than regular
+--   lists, but are ideal for the situation where you must constantly append
+--   to, and examine, a list that you are building up.
 module Data.List.Concat where
 
 import           Control.Applicative
